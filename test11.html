@@ -1,0 +1,28 @@
+<!-- index.html -->
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>Flattened JSON 출력</title>
+</head>
+<body>
+  <h1>Flattened JSON 데이터</h1>
+  <ul id="dataList"></ul>
+
+  <script>
+    fetch("data/flattened.json")
+      .then(response => response.json())
+      .then(data => {
+        const list = document.getElementById("dataList");
+        for (const key in data) {
+          const item = document.createElement("li");
+          item.textContent = `${key}: ${data[key]}`;
+          list.appendChild(item);
+        }
+      })
+      .catch(error => {
+        console.error("데이터 로딩 실패:", error);
+      });
+  </script>
+</body>
+</html>

@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>명언 리스트</title>
+    <style>
+    body {
+      font-family: 'Arial', sans-serif;
+      background-color: #f9f9f9;
+      padding: 30px;
+      line-height: 1.6;
+    }
+
+    h2 {
+      color: #333;
+      margin-bottom: 20px;
+    }
+
+    ul#quoteList {
+      list-style: none;
+      padding: 0;
+    }
+
+    ul#quoteList li {
+      background-color: #fff;
+      border: 1px solid #ddd;
+      padding: 10px 15px;
+      margin-bottom: 10px;
+      border-radius: 6px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+  </style>
+</head>
+<body>
+  <h2>📜 웹에서 가져온 명언들</h2>
+  <ul id="quoteList"></ul>
+
+  <script>
+    fetch("flattened.json")
+      .then(response => response.json())
+      .then(data => {
+        const list = document.getElementById("quoteList");
+        for (const key in data) {
+          const li = document.createElement("li");
+          li.textContent = `${key}: ${data[key]}`;
+          list.appendChild(li);
+        }
+      })
+      .catch(err => {
+        console.error("불러오기 실패:", err);
+      });
+  </script>
+</body>
+</html>
