@@ -38,7 +38,7 @@
   <ul id="quoteList"></ul>
 
   <script>
-    axios.get("data/crawl_and_flatten.json")
+    axios.get("crawl_and_flatten.json")
       .then(response => {
         const data = response.data;
         const list = document.getElementById("quoteList");
