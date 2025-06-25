@@ -1,5 +1,4 @@
 # 먼저 beautifulsoup4가 설치되어 있어야 합니다
-# 설치가 안 되어 있다면 아래 명령어를 먼저 실행하세요:
 # pip install beautifulsoup4
 
 # 필요한 라이브러리 가져오기
@@ -41,7 +40,7 @@ for i, item in enumerate(quotes):  # quotes 리스트를 인덱스와 함께 반
         flat_data[f"{i} : {key}"] = value  # 키 이름을 인덱스와 함께 구성
 
 # 7. 평탄화된 데이터를 JSON 파일로 저장
-with open("flattened.json", "w", encoding="utf-8") as f:
+with open("data/crawl_and_flatten.json", "w", encoding="utf-8") as f:
     # JSON 형태로 저장하고, 한글이 깨지지 않게 설정 (ensure_ascii=False)
     # 보기 좋게 들여쓰기(indent=2) 설정
     json.dump(flat_data, f, ensure_ascii=False, indent=2)

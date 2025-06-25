@@ -1,18 +1,19 @@
-<!-- index.html -->
 <!DOCTYPE html>
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
   <title>Flattened JSON 출력</title>
+  <!-- Axios CDN 추가 -->
+  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
 </head>
 <body>
   <h1>Flattened JSON 데이터</h1>
   <ul id="dataList"></ul>
 
   <script>
-    fetch("data/flattened.json")
-      .then(response => response.json())
-      .then(data => {
+    axios.get("data/flattened.json")
+      .then(response => {
+        const data = response.data;
         const list = document.getElementById("dataList");
         for (const key in data) {
           const item = document.createElement("li");

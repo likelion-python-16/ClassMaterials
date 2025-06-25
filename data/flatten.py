@@ -44,7 +44,7 @@ nested_data = {
 flattened_data = flatten(nested_data)
 
 # 결과를 JSON 파일로 저장하기
-with open("flattened.json", "w", encoding="utf-8") as file:
+with open("data/flattened.json", "w", encoding="utf-8") as file:
     # ensure_ascii=False → 한글이 깨지지 않게 저장
     # indent=2 → 보기 좋게 들여쓰기해서 저장
     json.dump(flattened_data, file, ensure_ascii=False, indent=2)
