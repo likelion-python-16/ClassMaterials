@@ -4,17 +4,35 @@ Selenium 공식 문서 (Python)[https://www.selenium.dev/documentation/webdriver
 webdriver-manager 공식 문서
 [https://pypi.org/project/webdriver-manager/](https://pypi.org/project/webdriver-manager/)
 
+웹드라이버 (WebDriver): 코드로 조종할 수 있게 해주는 프로그램(중간 연결자)입니다. Selenium이 이걸 통해 브라우저를 움직여요.
+
 ![[Pasted image 20250629103057.png|200]]
 폴더 및 파일생성
+`__init__`파일을 폴더안에 만들어주는 이유?
+`selenium_crawler` 폴더가 패키지로 인식되어야 import가 가능합니다.
+`__init__.py`는 “이 폴더는 파이썬 모듈이야!” 라고 명시하는 용도입니다. 빈 파일이어도 무방해요.
 
 공식문서에 있는 기본 뼈대 탬플릿은 다음과 같습니다:
 ```python
+# Selenium에서 Chrome 브라우저를 제어하기 위한 웹드라이버 객체
 from selenium import webdriver
+
+# ChromeDriver 실행을 도와주는 Service 객체 
+# (드라이버 경로 설정 및 실행 관리)
 from selenium.webdriver.chrome.service import Service
+
+# ChromeDriver를 자동으로 설치하고 최신 버전으로 관리해주는 도구
 from webdriver_manager.chrome import ChromeDriverManager
+
+# HTML 요소를 특정 속성(ID, CLASS 등)으로 찾기 위한 도구
 from selenium.webdriver.common.by import By
+
+# 특정 조건이 충족될 때까지 기다리기 위한 명시적 대기 기능
 from selenium.webdriver.support.ui import WebDriverWait
+
+# WebDriverWait과 함께 쓰이며, 요소가 특정 상태일 때까지 기다릴 조건을 정의 예: 요소가 화면에 보일 때까지(wait until visible)
 from selenium.webdriver.support import expected_conditions as ec
+# Selenium의 공식 문서 및 공식 권장 방식에 기반한 모듈들입니다.  
 
 def crawl_example():
 	driver = None
@@ -22,6 +40,13 @@ def crawl_example():
 	    # 1. 드라이버 셋업
         service = Service(ChromeDriverManager().install())
 	    driver = webdriver.Chrome(service=service)
+		# driver는 Chrome 브라우저를 제어하는 웹드라이버 객체입니다.
+		# 이 객체가 내부적으로 크롬을 켜고 
+		# (ChromeDriver.exe 같은 실행파일을 통해)  
+		# 우리가 .get(), .find_element() 같은 명령을 내리면 실제 
+		# 브라우저에서 움직입니다.
+	
+
         # 2. 페이지 열기
         driver.get("https://example.com")
 
@@ -35,11 +60,58 @@ def crawl_example():
         # 5. 결과 처리
         result = driver.page_source
         return result
-    finally:
+    finally: # 에러가 나든 안나든 무조건 실행
         driver.quit()
 ```
+except는 에러가 났을때만 실행 즉, 에러가 발생하여 except가 발생하면 driver.quit()는 실행이 안되버립니다.  그리고 브라우저가 안닫혀요. 그런 문제때문에 finally를 실행시키는데 try에서 에러가 나버릴때 finally가 실행되면서 빠져나오려면 driver = none이 빈그릇이 있어야 에러없이 빠져나올수 있습니다. 그러나 except가 없으니 에러가 왜 났는지 기록에 남지 않아요. 그래서 아래 코드를 보면 except가 추가된 코드입니다.
+
+파일구조:
+```
+프로젝트/
+  ├─ selenium_crawler/
+  │    └─ kakaomap_scrap1.py  ← 여기 함수 정의
+  ├─ cafe_data.json
+  ├─ venv/
+  └─ 현재 실행 중인 Jupyter Notebook (.ipynb)
+```
+이때 Jupyter Notebook에서 아래 코드를 실행하면:
+```python
+import sys, os
+sys.path.append(os.getcwd())
+
+from selenium_crawler.kakaomap_scrap1 import get_data_from_kakaomap as get_data_v1
+get_data_v1()
+```
+`sys.path.append(os.getcwd())`가 필요한 이유는 -Jupyter Notebook은 보통 프로젝트 루트에서 실행됩니다. 하지만 내부적으로 `sys.path`에`selenium_crawler` 폴더가 포함되지 않아서,  해당 모듈을 찾지 못할 수 있습니다.
+그래서 `os.getcwd()`를 통해 현재 디렉토리를 `sys.path`에 강제로 넣어주는 거죠.
+
+파일 구조가 이렇다면:
+```
+프로젝트/
+├─ selenium_crawler/
+│   ├─ __init__.py
+│   ├─ kakaomap_scrap1.py
+│   ├─ kakaomap_scrap.py
+│   ├─ naver_blog_scrap.py
+│   └─ 현재 실행 중인 Jupyter Notebook (.ipynb)  
+└─ cafe_data.json
+```
+이때 Jupyter Notebook에서 아래 코드를 실행하면:
+```python
+from kakaomap_scrap1 import get_data_from_kakaomap
+get_data_from_kakaomap()
+```
+`selenium_crawler`는 상위 폴더니까 import 경로에 안 쓰고 그냥 같은 폴더 내의 파일 이름으로 import하면 됩니다.
+
+그러나 가능하면 쥬피터 노트북에서 실험용으로 사용할때는 아래코드를 사용하는 것을 권장합니다. 하지만 배포코드에서는 정식 패키지 구조를 따르는 것이 좋습니다.
+```python
+import sys, os
+sys.path.append(os.getcwd())
+```
+모듈 import 에러 방지 및 상대경로에서 자유로움
 
 
+---
 `kakaomap_scrap1.py` 코드작성
 Selenium 기반 크롤링
 ```python
@@ -55,6 +127,7 @@ from selenium.webdriver.support import expected_conditions as ec
 
 
 def get_data_from_kakaomap():
+	driver = None
     try:
 	    # 초기 셋업 (웹드라이버 설정)
         service = Service(ChromeDriverManager().install())
@@ -81,12 +154,85 @@ def get_data_from_kakaomap():
         # 종료부 (브라우저 닫기 + 반환)
         driver.quit()
         return shop_list
+        
     except Exception as e:
         print(e)
-        raise e
+        raise e # 필요 시 다시 예외 던지기
+        
+    finally:
+        if driver:
+            driver.quit() # 무조건 브라우저 닫기
 ```
 위 코드는 웹드라이버 크롤링의 기본 구조 (템플릿)입니다. 즉, 웹드라이버로 특정 페이지에서 원하는 데이터를 가져오는 자동화 스크립트의 골격이라고 생각하면 됩니다.
 
+필요한 모듈 임포트
+```python
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
+
+from time import sleep
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as ec
+```
+
+드라이버 설정 및 실행
+```python
+driver = None
+service = Service(ChromeDriverManager().install())
+driver = webdriver.Chrome(service=service)
+```
+
+카카오맵 열고, 검색창이 보일 때까지 대기
+```python
+driver.get("https://map.kakao.com/")
+wait = WebDriverWait(driver, 10)
+wait.until(ec.visibility_of_element_located((By.ID, "search.keyword.query")))
+```
+
+검색어 입력 및 실행
+```python
+search_input = driver.find_element(By.ID, "search.keyword.query")
+search_input.send_keys("강남구 카페")
+search_input.send_keys(Keys.ENTER)
+```
+
+결과 리스트가 뜰 때까지 대기
+```python
+wait.until(ec.visibility_of_element_located((By.ID, "info.search.place.list")))
+```
+
+결과 추출 및 확인
+```python
+place_list = driver.find_element(By.ID, "info.search.place.list")
+shop_list = place_list.get_attribute("innerHTML")
+
+# 결과 일부만 보기
+print(shop_list[:1000])  # 너무 길면 일부만 출력
+```
+
+드라이버 종료 (무조건 마지막에 실행)
+```python
+if driver:
+    driver.quit()
+```
+
+쥬피터 연결
+```python
+jupyter notebook --no-browser --port=8888
+```
+
+또는 python에 모두 입력하고 아래와 같이 실행합니다.
+```python
+import sys, os
+sys.path.append(os.getcwd())
+
+from selenium_crawler.kakaomap_scrap1 import get_data_from_kakaomap as get_data_v1
+
+get_data_v1()
+```
 ---
 ```python
 # 입력부 (검색어 입력 및 실행)
@@ -145,11 +291,15 @@ shop_list = place_list.get_attribute("innerHTML")
 
 ---
 ```python
-# 크롬드라이브를 종료합니다.
-driver.quit()
-
-# shop_list는 아래와 같은 코드에서 가져온 HTML 문자열입니다
-return shop_list
+	return shop_list
+	
+except Exception as e:
+	print("[ERROR 발생]", e)
+	raise e
+	
+finally:
+	if driver:
+		driver.quit()
 ```
 
 ---
@@ -158,13 +308,16 @@ return shop_list
 - 위 코드(특히 `try:` 블록 안)에서 에러가 발생하면 이 `except` 블록이 실행됩니다.
 - `Exception as e`는 발생한 오류 메시지를 `e`라는 변수에 저장합니다.
 
-`print(e)`
+`print("[ERROR 발생]", e)`
 - 예외 객체 `e`를 출력합니다.
 - 콘솔이나 로그에 어떤 에러가 났는지 확인할 수 있도록 도와줍니다.
 
 `raise e`
 - 에러를 다시 바깥으로 던짐(재전파)합니다.
 - 단순히 에러를 무시하지 않고, 이 함수가 호출된 상위 코드에게 "에러가 났다"고 알림으로 역할은 호출자에게 에러를 알리기 위한 재전파
+
+`finally:` 
+- 무조건 실행하므로 try에서 에러가 나도 브라우저를 닫을수 있습니다.
 
 ---
 의사코드:
@@ -490,6 +643,31 @@ page_num = page_count % 5 if page_count % 5 != 0 else 5
 ```
 - 현재 페이지 번호에 해당하는 버튼은 `info.search.page.no1`, `no2`, ..., `no5`
 - 예외 처리: 5의 배수일 때는 `0`이 되므로 `5`로 바꿔줌
+
+1~5페이지 구간
+```
+<a id="info.search.page.no1">1</a>
+<a id="info.search.page.no2">2</a>
+<a id="info.search.page.no3">3</a>
+<a id="info.search.page.no4">4</a>
+<a id="info.search.page.no5">5</a>
+```
+
+6~10페이지 구간 (다음 클릭하면 바뀜)
+```
+<a id="info.search.page.no1">6</a>
+<a id="info.search.page.no2">7</a>
+<a id="info.search.page.no3">8</a>
+<a id="info.search.page.no4">9</a>
+<a id="info.search.page.no5">10</a>
+```
+즉, id는 `no1` `no5` 그대로고, 텍스트만 6 ~10으로 바뀜
+
+`page_num = page_count % 5 if page_count % 5 != 0 else 5`
+5의 배수일 때 
+`"5로 나눈 나머지가 0이 아니라면"` → 나머지 그대로 (`1~4`)
+`"나머지가 0이면"` → `5`라고 치환
+
 ---
 ```python
 page_btn_id = f"info.search.page.no{page_num}"  
