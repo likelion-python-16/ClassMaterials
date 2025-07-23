@@ -44,7 +44,9 @@ app = FastAPI()
 origins = [
     "http://localhost",             # 기본 개발 서버
     "http://localhost:3000",        # React 개발 서버
-    "http://localhost:8080",        # Vue 개발 서버
+    "http://localhost:8000",        # Vue 개발 서버
+    "http://127.0.0.1:8000",
+    "http://127.0.0.1:3000",
     "https://localhost",            # https 환경 테스트용
     "http://localhost.tiangolo.com" # FastAPI 예제 도메인
 ]
@@ -99,10 +101,23 @@ fetch("http://localhost:8000/", {
   credentials: "include"  // withCredentials과 동일
 })
   .then(res => res.json())
-  .then(data => console.log(data))
+  .then(data => console.log("CORS 응답 OK!",data))
   .catch(err => console.error("CORS 오류!", err));
 ```
 
+CORS 차단 테스트 "성공" 메시지
+```
+Promise {<pending>}
+VM21:6 CORS 응답 OK!
+{message: 'CORS OK! Hello from FastAPI'}
+```
+
+React(프론트엔드)와 FastAPI(백엔드)를 따로 띄워서 개발할 경우, FastAPI에서는 CORS 차단 방지 설정을 반드시 해야 합니다.
+
+Origin	요청을 보내는 페이지의 주소`(예: http://localhost:3000)`
+Host	요청을 받는 서버 주소`(예: http://localhost:8000)`
+
+html로 차단방지코드 작성예시:
 ```html
 <!-- test.html -->
 <!DOCTYPE html>
@@ -124,3 +139,9 @@ fetch("http://localhost:8000/", {
   </body>
 </html>
 ```
+
+CORS 차단 방지 코드는 백엔드(FastAPI)에서 작성해야 합니다.
+브라우저는 보안상 규칙(Same-Origin Policy)에 따라, 다른 출처(origin) 로 요청을 보낼 때 "서버가 허락해야만" 요청을 허용합니다.
+- 프론트에서 `fetch()`나 `axios()`로 아무리 잘 요청해도
+- 백엔드(FastAPI)에서 `"너는 허용된 origin이야"` 라고 설정하지 않으면
+- 브라우저가 자체적으로 요청을 막습니다
