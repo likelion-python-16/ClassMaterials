@@ -41,10 +41,23 @@ pip freeze > requirements.txt
 `gunicorn`은 Docker 컨테이너 내부에서 Django 앱을 실행할 때 사용합니다.
 
 ```python
+import os
+from dotenv import load_dotenv
+load_dotenv()
+
+SECRET_KEY = os.getenv("DJANGO_SECRET_KEY")
+DEBUG = os.getenv("DJANGO_DEBUG") == "True"
+ALLOWED_HOSTS = os.getenv("DJANGO_ALLOWED_HOSTS", "").split(",")
+
+ALLOWED_HOSTS = ["*"] # 개발 테스트시에만 사용
+
 INSTALLED_APPS = [
     "myapp",
     "rest_framework"
 ]
+
+STATIC_URL = "/static/"
+STATIC_ROOT = os.path.join(BASE_DIR, "staticfiles")
 ```
 
 `Dockerfile` 작성
@@ -60,6 +73,9 @@ COPY requirements.txt .
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
 COPY . .
+
+# 정적 파일 수집
+RUN python manage.py collectstatic --noinput
 
 EXPOSE 8000
 
@@ -84,9 +100,9 @@ Docker 빌드 시, 이미지에 포함하지 않을 파일을 정의
 
 .env
 ```env
-DEBUG=False
-SECRET_KEY=your-secret-key
-ALLOWED_HOSTS=*
+DJANGO_DEBUG=True
+DJANGO_SECRET_KEY=your-secret-key
+DJANGO_ALLOWED_HOSTS=54.180.115.79,localhost
 ```
 이후 Docker에서 `.env`도 읽게 하려면 환경 변수 연동 작업이 추가로 필요합니다.
 
@@ -187,6 +203,12 @@ node_modules/
 
 # Docker 관련 파일 제외 (사용할 경우)
 docker-compose.override.yml
+```
+
+모델생성을 안했더라도 관리자 페이지도 모델이기때문에 데이터 테이블 생성을 함.
+```bash
+python manage.py makemigrations
+python manage.py migrate
 ```
 
 ---
@@ -290,7 +312,34 @@ See "man sudo_root" for details.
 
 ubuntu@ip-172-31-45-109:~$ 
 ```
+---
+```bash
+pip install python-dotenv
+```
 
+`.env` 또는 환경변수
+```env
+DJANGO_SECRET_KEY=your-secret
+DJANGO_DEBUG=False
+DJANGO_ALLOWED_HOSTS=54.180.115.79,localhost
+```
+
+proj/settings.py
+```python
+from dotenv import load_dotenv
+load_dotenv()
+
+SECRET_KEY = os.getenv("DJANGO_SECRET_KEY")
+DEBUG = os.getenv("DJANGO_DEBUG") == "True"
+ALLOWED_HOSTS = os.getenv("DJANGO_ALLOWED_HOSTS", "").split(",")
+
+
+INSTALLED_APPS = [
+    "myapp",
+    "rest_framework"
+]
+```
+---
 Docker 설치 및 환경 구성
 1단계: Docker 설치
 Docker 설치 (VSCode 터미널에서 EC2에 SSH 접속한 상태에서 실행)
@@ -436,7 +485,11 @@ Add secret클릭하여 저장합니다.
 
 이후 EC2_HOST와 EC2_USER도 등록합니다.
 ![[Pasted image 20250731175147.png]]
- EC2_HOST확인하는 방법: EC2 우분투에서 퍼블릭 IP 확인 명령어
+
+GitHub > Settings > Secrets and variables > Actions > `New repository secret`  (.evn도 github에 등록합니다. )
+![[Pasted image 20250802191049.png]]
+ 
+EC2_HOST확인하는 방법: EC2 우분투에서 퍼블릭 IP 확인 명령어
 ```bash
 curl http://checkip.amazonaws.com
 ```
@@ -476,20 +529,25 @@ jobs:
     - name: Set up SSH
       run: |
         mkdir -p ~/.ssh
-        echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
-        chmod 600 ~/.ssh/id_rsa
-        ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+        echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+
+    - name: Upload .env file to EC2
+      run: |
+        echo "${{ secrets.ENV_CONTENT }}" > .env
+        scp -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa .env ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:~/deploy_test/docker_project2/.env
 
     - name: Deploy to EC2
-      run: |
-        ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
-        cd ~/deploy_test/docker_project2
-        git pull origin main
-        docker build -t django-docker-app .
-        docker stop django-app || true
-        docker rm django-app || true
-        docker run -d -p 8000:8000 --name django-app django-docker-app
-        EOF
+      run: |
+        ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
+        cd ~/deploy_test/docker_project2
+        git pull origin main
+        docker build -t django-docker-app .
+        docker stop django-app || true
+        docker rm django-app || true
+        docker run -d -p 8000:8000 --env-file .env --name django-app django-docker-app
+        EOF
 ```
 배포 조건
 - `main` 브랜치에 `push` 될 때 자동 배포됩니다.
@@ -537,6 +595,21 @@ docker ps
 이렇게 출력되면 연결 성공입니다:
 ![[Pasted image 20250731185843.png]]
 
+EC2서버에서 
+```bash
+# 컨테이너 내부로 진입
+docker exec -it django-app bash
+
+# admin 테이블생성
+python manage.py makemigrations
+python manage.py migrate
+python manage.py createsuperuser
+```
+
+그리고 브라우저에서 실행하여 확인합니다.
+http://54.180.115.79:8000/admin/
+`http://<EC2_IP>:8000/admin/`
+
 ---
 아래는 자주 겪는 변경 시나리오별로 Dockerfile, GitHub Actions(YAML), 기타 설정을 수정해야 하는지 여부를 정리한 것입니다.
 
@@ -572,25 +645,268 @@ CONTAINER ID   IMAGE               COMMAND                  CREATED             
 docker exec -it django-app python manage.py migrate
 ```
 
-`.env` 또는 환경변수
-```env
-DJANGO_SECRET_KEY=your-secret
-DJANGO_DEBUG=False
-DJANGO_ALLOWED_HOSTS=54.180.115.79,localhost
+
+---
+정적 파일 수집 및 서빙 설정
+정적 파일(static files)이란?
+###### Django에서 말하는 "정적 파일"은 다음과 같은 프론트엔드 리소스입니다:
+| 파일 종류        | 예시                               |
+| ------------ | -------------------------------- |
+| CSS 파일       | `style.css`, `main.css` 등        |
+| JS 파일        | `app.js`, `main.js` 등            |
+| 이미지 파일       | `.jpg`, `.png`, `.svg`, `.ico` 등 |
+| 폰트 파일        | `.woff`, `.ttf`, `.eot` 등        |
+| 기타 클라이언트 리소스 | HTML 외 모든 브라우저용 리소스들             |
+정적파일이 생기기 시작하는 순간 아래 과정을 추가해야 합니다.
+
+---
+`whitenoise` 패키지 설치
+```bash
+pip install whitenoise
+pip freeze > requirements.txt
 ```
 
-proj/settings.py
+settings.py에 정적파일 추가
 ```python
-from dotenv import load_dotenv
-load_dotenv()
+import os
+from pathlib import Path
 
-SECRET_KEY = os.getenv("DJANGO_SECRET_KEY")
-DEBUG = os.getenv("DJANGO_DEBUG") == "True"
-ALLOWED_HOSTS = os.getenv("DJANGO_ALLOWED_HOSTS", "").split(",")
+BASE_DIR = Path(__file__).resolve().parent.parent
 
+# 정적 파일 경로
+STATIC_URL = '/static/'
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')  # collectstatic으로 생성될 경로
+STATICFILES_DIRS = [os.path.join(BASE_DIR, 'static')]  # 개발 시 사용하는 경로
 
-INSTALLED_APPS = [
-    "myapp",
-    "rest_framework"
+# Whitenoise 설정 (이 순서 중요)
+MIDDLEWARE = [
+    "whitenoise.middleware.WhiteNoiseMiddleware",  # 반드시 SecurityMiddleware 다음 또는 가장 위
+    'django.middleware.security.SecurityMiddleware',
+    'django.middleware.common.CommonMiddleware',
+    ...
 ]
+
+STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
+```
+
+정적 파일 디렉토리 생성
+```
+예: static/css/style.css, static/js/main.js 등
+```
+
+Dockerfile 수정 (정적 파일 포함)
+정적 파일이 컨테이너 이미지에 포함되도록 `collectstatic` 명령을 Dockerfile에 추가:
+```cockerfile
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE 1
+ENV PYTHONUNBUFFERED 1
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --upgrade pip && pip install -r requirements.txt
+
+COPY . .
+
+# 정적 파일 수집
+RUN python manage.py collectstatic --noinput
+
+EXPOSE 8000
+
+CMD ["gunicorn", "proj.wsgi:application", "--bind", "0.0.0.0:8000"]
+```
+
+`.dockerignore`에 정적 파일 포함하지 않도록 확인
+```
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+.env
+db.sqlite3
+
+# ❌ 아래 라인이 있으면 삭제해야 함
+# static/
+# staticfiles/
+```
+
+EC2 배포 후 확인 (1회만 수동 점검)
+정적 파일이 정상 수집되었는지 EC2에서 확인:
+```bash
+docker exec -it django-app ls staticfiles/
+```
+또는 웹 브라우저에서 `http://<EC2_PUBLIC_IP>:8000/static/...` 에서 CSS, JS, 이미지 등이 보이는지 확인.
+
+웹에서 확인:
+```
+http://<EC2_IP>:8000/static/css/style.css
+```
+
+---
+개발이 모두 완료되어 문제가 없다고 판단되면 SQLlite3를 PostreSQL로 변경합니다.
+그이후 해야할 작업
+전환 시점은?
+```
+🟡 개발 초기/중반:
+    - SQLite로 충분
+    - 기능 개발에 집중
+    - 마이그레이션 반복해도 부담 없음
+
+✅ 개발 완료 직전:
+    - 테스트 완료
+    - EC2/서버 환경 안정화
+    - 이 시점에 PostgreSQL로 변경
+```
+
+PostgreSQL 컨테이너 준비
+`docker-compose.yml` 파일 새로 작성
+```yaml
+version: '3.9'
+
+services:
+  db:
+    image: postgres:15
+    container_name: postgres-db
+    environment:
+      POSTGRES_DB: mydb
+      POSTGRES_USER: myuser
+      POSTGRES_PASSWORD: mypassword
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - app-net
+
+  web:
+    build: .
+    container_name: django-app
+    command: gunicorn proj.wsgi:application --bind 0.0.0.0:8000
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    depends_on:
+      - db
+    networks:
+      - app-net
+
+volumes:
+  postgres_data:
+
+networks:
+  app-net:
+```
+기존 `docker run` 방식은 폐기하고 `docker-compose up -d` 기반으로 전환합니다.
+
+`.env` 환경 변수 설정 변경
+```env
+# Django
+DJANGO_SECRET_KEY=your-secret-key
+DJANGO_DEBUG=False
+DJANGO_ALLOWED_HOSTS=54.180.115.79,localhost
+
+# PostgreSQL DB 연결 정보
+POSTGRES_DB=mydb
+POSTGRES_USER=myuser
+POSTGRES_PASSWORD=mypassword
+POSTGRES_HOST=db
+POSTGRES_PORT=5432
+```
+
+`settings.py`의 DATABASES 설정 수정
+```python
+import os
+
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': os.getenv("POSTGRES_DB"),
+        'USER': os.getenv("POSTGRES_USER"),
+        'PASSWORD': os.getenv("POSTGRES_PASSWORD"),
+        'HOST': os.getenv("POSTGRES_HOST", "localhost"),
+        'PORT': os.getenv("POSTGRES_PORT", "5432"),
+    }
+}
+```
+
+PostgreSQL 드라이버 설치
+```bash
+pip install psycopg2-binary
+pip freeze > requirements.txt
+```
+
+마이그레이션 초기화 및 실행
+SQLite에서 PostgreSQL로는 DB 포맷이 다르므로 새로 마이그레이션 필요  
+(기존 `db.sqlite3`는 버립니다.)
+```bash
+# 기존 SQLite DB 삭제
+rm db.sqlite3
+
+# migrations 폴더 초기화는 하지 마세요! (models 유지 상태에서)
+docker-compose exec web python manage.py migrate
+```
+Django가 PostgreSQL에 맞춰 테이블들을 새로 생성합니다.
+
+슈퍼유저 생성
+```bash
+docker-compose exec web python manage.py createsuperuser
+```
+
+GitHub Actions 수정 (`docker-compose` 사용하도록)
+```yaml
+ .github/workflows/docker-deploy.yml
+- name: Deploy to EC2
+  run: |
+    ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
+    cd ~/deploy_test/docker_project2
+    git pull origin main
+    docker-compose down
+    docker-compose up --build -d
+    EOF
+```
+
+EC2에 `.env` 재설정
+```bash
+nano .env  # PostgreSQL 연결 정보 포함되었는지 확인
+```
+
+서버 상태 확인
+```bash
+# PostgreSQL 컨테이너 정상 실행 중?
+docker ps
+
+# Django 앱 정상 접속?
+http://<EC2_PUBLIC_IP>:8000
+
+# 관리자 페이지 로그인?
+http://<EC2_PUBLIC_IP>:8000/admin/
+```
+
+SQLite 잔재 정리 (선택)
+- `.dockerignore`에 `db.sqlite3` 제거
+- `.gitignore`에 `db.sqlite3` 계속 유지
+
+
+
+----
+###### 협업시 커밋 메시지 컨벤션 
+| 타입         | 설명                            |
+| ---------- | ----------------------------- |
+| `feat`     | 새로운 기능 추가 (feature)           |
+| `fix`      | 버그 수정 (bug fix)               |
+| `docs`     | 문서 관련 변경 (README, 주석 등)       |
+| `style`    | 코드 포맷팅 (세미콜론, 공백 등), 의미 없는 변경 |
+| `refactor` | 기능 변경 없이 코드 구조만 변경            |
+| `test`     | 테스트 코드 추가 또는 수정               |
+| `chore`    | 빌드, 패키지 설정 등 기타 작업 (배포 관련 등)  |
+
+예시
+```bash
+git add proj/settings.py
+git commit -m "fix: STATIC_ROOT 누락으로 인한 collectstatic 실패 해결"
+---
+git commit -m "feat: Toss 결제 연동을 위한 API 엔드포인트 추가"
 ```
