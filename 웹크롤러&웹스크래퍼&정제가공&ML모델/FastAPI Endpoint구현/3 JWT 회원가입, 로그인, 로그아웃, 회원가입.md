@@ -54,133 +54,6 @@ class FdcRouter:
         return None
 ```
 ---
-`src/core/auth.py`
-```python
-# JWT/인증 공통 설정 (환경변수 로드)
-import os
-from dotenv import load_dotenv
-
-load_dotenv(verbose=True)
-
-AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "change-me")
-AUTH_ALGORITHM = os.getenv("AUTH_ALGORITHM", "HS256")
-AUTH_ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("AUTH_ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
-```
-
-`src/core/database.py`
-```python
-# SQLAlchemy 세션/엔진 설정(외부 스키마 myproject_db)
-# - Django와 동일 DB를 바라보되, SQLAlchemy로 접속
-import os
-from dotenv import load_dotenv
-from sqlalchemy import URL, create_engine
-from sqlalchemy.orm import sessionmaker, declarative_base
-
-load_dotenv(verbose=True)
-
-SQLALCHEMY_DATABASE_URL = URL.create(
-    drivername=os.getenv("DATABASE_DRIVER", "mysql+pymysql"),
-    username=os.getenv("DATABASE_USERNAME", "django_user"),
-    password=os.getenv("DATABASE_PASSWORD", "DjangoUserPass!123"),
-    host=os.getenv("DATABASE_HOST", "localhost"),
-    port=os.getenv("DATABASE_PORT", "3306"),
-    database=os.getenv("DATABASE_NAME", "myproject_db"),  
-    # 외부 스키마(myproject_db)
-)
-
-# pool_pre_ping=True: 커넥션 유휴 시에도 살아있는지 핑 체크
-engine = create_engine(SQLALCHEMY_DATABASE_URL, pool_pre_ping=True)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-# 모든 모델의 베이스 클래스
-Base = declarative_base()
-```
-
-`src/dependencies/database.py`
-```python
-# 요청마다 DB 세션을 열고 닫는 FastAPI 의존성
-from typing import Generator
-from src.core.database import SessionLocal
-
-def get_db() -> Generator:
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-```
-
-`src/dependencies/auth.py`
-```python
-# 인증 핵심: 비밀번호 해시/검증, JWT 생성/검증, 현재 사용자 로딩
-# - tokenUrl="/auth/login": Swagger에서 Authorize할 때 쓰는 토큰 발급 엔드포인트
-from datetime import datetime, timedelta
-from typing import Optional
-
-from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError, jwt
-from passlib.context import CryptContext
-from sqlalchemy.orm import Session
-
-import src.core.auth as AUTH
-from src.dependencies.database import get_db
-from src.models.user_model import User
-
-# bcrypt 기반 비밀번호 해시/검증 컨텍스트
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-# OAuth2 Bearer 토큰(Access Token) 의존성
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
-
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-	# 입력 비번과 해시된 비번 비교
-    return pwd_context.verify(plain_password, hashed_password)
-
-def get_password_hash(password: str) -> str:
-	# 비밀번호 해싱(저장 시 사용)
-    return pwd_context.hash(password)
-
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
-	# JWT 페이로드에 만료(exp) 추가 후 서명
-    to_encode = data.copy()
-    expire = datetime.now() + (expires_delta or timedelta(minutes=15))
-    to_encode.update({"exp": expire})
-    return jwt.encode(to_encode, AUTH.AUTH_SECRET_KEY, algorithm=AUTH.AUTH_ALGORITHM)
-
-def decode_access_token(token: str) -> dict:
-	# JWT 유효성/서명 검증 → 페이로드 반환
-    try:
-        return jwt.decode(token, AUTH.AUTH_SECRET_KEY, algorithms=[AUTH.AUTH_ALGORITHM])
-    except JWTError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-def get_current_username(access_token: str = Depends(oauth2_scheme)) -> str:
-	# Authorization: Bearer <token> 에서 username(sub) 추출
-    payload = decode_access_token(access_token)
-    username: str = payload.get("sub")
-    if not username:
-        raise HTTPException(status_code=401, detail="Token payload missing 'sub'")
-    return username
-
-def get_current_user(
-    username: str = Depends(get_current_username),
-    db: Session = Depends(get_db),
-) -> User:
-    user = db.query(User).filter(User.username == username).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    return user
-
-def get_access_token_expire_minutes() -> int:
-	# 환경설정에서 토큰 만료시간(분) 조회
-    return AUTH.AUTH_ACCESS_TOKEN_EXPIRE_MINUTES
-```
-
 `src/models/user_model.py`
 ```python
 # 외부 스키마 매핑: Django의 auth_user 테이블과 1:1 매핑
@@ -263,6 +136,312 @@ class UserRead(BaseModel):
     class Config:
         from_attributes = True  # SQLAlchemy 모델 → 응답 변환
 ```
+
+필요 패키지 설치
+```bash
+pip install PyMySQL
+pip install python-jose
+```
+
+필요함수 작성 및 의존성 주입 준비
+`src/core/auth.py` (인증정보 포함)
+```python
+# JWT/인증 공통 설정 (환경변수 로드)
+import os
+from dotenv import load_dotenv
+
+load_dotenv(verbose=True)
+
+AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "change-me")
+AUTH_ALGORITHM = os.getenv("AUTH_ALGORITHM", "HS256")
+AUTH_ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("AUTH_ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
+```
+
+`.env`
+```python
+##### DATABASE #####
+DATABASE_DRIVER=mysql+pymysql
+DATABASE_HOST=localhost
+DATABASE_PORT=3306
+DATABASE_USERNAME=django_user
+DATABASE_PASSWORD=DjangoUserPass!123
+DATABASE_NAME=restaurant_db
+DATABASE_URL=mysql+pymysql://django_user:DjangoUserPass!123@localhost:3306/myproject_db?charset=utf8mb4
+
+##### AUTH #####
+AUTH_SECRET_KEY=this-is-secret-key
+AUTH_ALGORITHM=HS256 # JWT에서 사용되는 대표적인 암호화 알고리즘
+AUTH_ACCESS_TOKEN_EXPIRE_MINUTES=30
+```
+
+`src/dependencies/database.py`
+```python
+# 요청마다 DB 세션을 열고 닫는 FastAPI 의존성
+from typing import Generator
+from src.core.database import SessionLocal
+
+def get_db() -> Generator:
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+```
+
+`src/dependencies/auth.py`
+```python
+# 인증 핵심: 비밀번호 해시/검증, JWT 생성/검증, 현재 사용자 로딩
+# - tokenUrl="/auth/login": Swagger에서 Authorize할 때 쓰는 토큰 발급 엔드포인트
+from datetime import datetime, timedelta
+from typing import Optional
+
+from fastapi import Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
+from jose import JWTError, jwt
+from passlib.context import CryptContext
+from sqlalchemy.orm import Session
+
+import src.core.auth as AUTH
+from src.dependencies.database import get_db
+from src.models.user_model import User
+
+# bcrypt 기반 비밀번호 해시/검증 컨텍스트
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+# OAuth2 Bearer 토큰(Access Token) 의존성
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+	# 입력 비번과 해시된 비번 비교
+    return pwd_context.verify(plain_password, hashed_password)
+
+def get_password_hash(password: str) -> str:
+	# 비밀번호 해싱(저장 시 사용)
+    return pwd_context.hash(password)
+
+def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
+	# JWT 페이로드에 만료(exp) 추가 후 서명
+    to_encode = data.copy()
+    expire = datetime.now() + (expires_delta or timedelta(minutes=15))
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, AUTH.AUTH_SECRET_KEY, algorithm=AUTH.AUTH_ALGORITHM)
+
+def decode_access_token(token: str) -> dict:
+	# JWT 유효성/서명 검증 → 페이로드 반환
+    try:
+        return jwt.decode(token, AUTH.AUTH_SECRET_KEY, algorithms=[AUTH.AUTH_ALGORITHM])
+    except JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+```
+
+`src/app.py`
+```python
+from fastapi import FastAPI
+from src.routers.index_router import router as index_router
+
+app = FastAPI(
+    title="패스트다이닝 API",
+    openapi_tags=tags_metadata)
+
+app.include_router(index_router)
+```
+----
+라우팅 오퍼레이터
+
+`src/routers/index_router.py`
+```python
+from fastapi import APIRouter
+
+router = APIRouter(tags=["Authentication"])
+
+@router.post("/login")
+async def login_user() 
+    return {}
+```
+
+스웨거에 현재까지 작성된 내용을 중간 정검 합니다.
+```python
+http://127.0.0.1:8000/docs
+```
+
+`src/routers/index_router.py`
+```python
+from fastapi import APIRouter, Depends
+from src.schemas import user_schema
+from src.schemas import access_token_schema
+from src.operators import user_operator
+
+@router.post("/login")
+async def login_user(access_token: access_token_schema.AccessToken = Depends
+(user_operator.authenticate_user)):
+    return {
+	    "access_token": access_token.access_token,
+	    "token_type": "bearer"
+    }
+```
+
+`src/operators/user_operator.py`
+```python
+from fastapi import Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from src.models import user_model
+from src.schemas import access_token_schema
+from src.dependencies.database import get_db
+from sqlalchemy.orm import Session
+from src.dependencies.auth import verify_password, get_access_token_expire_minutes, create_access_token
+from datetime import datetime, timedelta
+from src.models import access_token_model
+from typing import cast
+
+def get_user_by_username(username: str, db: Session = Depends(get_db)):
+    user = db.query(user_model.User)
+    .filter(user_model.User.username == username).first()
+    return user
+
+def authenticate_user(db: Session = Depends(get_db), form_data: OAuth2PasswordRequestForm = Depends(OAuth2PasswordRequestForm)):
+    user = get_user_by_username(form_data.username, db)
+
+    if user is None or verify_password(form_data.password, user.password) is False:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    expires_delta = timedelta(minutes=get_access_token_expire_minutes())
+    expiration_date = datetime.now() + expires_delta
+    access_token = create_access_token(
+        data={"sub": user.username}, expires_delta=expires_delta
+    )
+
+    db_token = access_token_model.AccessToken
+    (user_id=user.id,
+    access_token=access_token,
+    expiration_date=expiration_date)
+    db.add(db_token)
+    user.last_login = datetime.now()
+    db.commit()
+    db.refresh(db_token)
+    return cast(access_token_schema, db_token)
+```
+
+패키지 설치
+```bash
+pip insatll passlib
+pip insatll python-multipart
+
+# requirements.txt에 설치된 항목 추가하기
+pip freeze > requirements.txt
+```
+---
+회원가입 기능구현
+`src/routers/index_router.py`
+```python
+@router.post("/signup", response_model=user_schema.User)
+async def create_user(user: user_schema.User = Depends(user_operator.add_user)):
+    return user
+```
+
+`src/operators/user_operator.py`
+```python
+from src.schemas import user_schema
+from src.dependencies.auth import get_password_hash
+
+
+def add_user(user: user_schema.UserCreate, db: Session = Depends(get_db)):
+    if get_user_by_username(user.username, db) is not None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User already exist")
+    
+    db_user = user_model.User(username=user.username,
+                                password=get_password_hash(user.password),
+                                first_name=user.first_name,
+                                last_name=user.last_name,
+                                email=user.email,
+                                nickname = '',
+                                bio = '',
+                                is_superuser = False,
+                                is_staff = False,
+                                is_active = True,
+                                date_joined = datetime.now())
+    db.add(db_user)
+    db.commit()
+    db.refresh(db_user)
+
+    return db_user
+```
+
+필요한 패키지 설치
+```bash
+pip install cryptography
+pip install bcrypt
+pip freeze > requirements.txt
+```
+
+스웨거에서 indext router가 제대로 동작하는지 실행해 봅니다.
+암호화된 패스워드가 저장되는것을 확인할수 있습니다.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+`src/core/database.py`
+```python
+# SQLAlchemy 세션/엔진 설정(외부 스키마 myproject_db)
+# - Django와 동일 DB를 바라보되, SQLAlchemy로 접속
+import os
+from dotenv import load_dotenv
+from sqlalchemy import URL, create_engine
+from sqlalchemy.orm import sessionmaker, declarative_base
+
+load_dotenv(verbose=True)
+
+SQLALCHEMY_DATABASE_URL = URL.create(
+    drivername=os.getenv("DATABASE_DRIVER", "mysql+pymysql"),
+    username=os.getenv("DATABASE_USERNAME", "django_user"),
+    password=os.getenv("DATABASE_PASSWORD", "DjangoUserPass!123"),
+    host=os.getenv("DATABASE_HOST", "localhost"),
+    port=os.getenv("DATABASE_PORT", "3306"),
+    database=os.getenv("DATABASE_NAME", "myproject_db"),  
+    # 외부 스키마(myproject_db)
+)
+
+# pool_pre_ping=True: 커넥션 유휴 시에도 살아있는지 핑 체크
+engine = create_engine(SQLALCHEMY_DATABASE_URL, pool_pre_ping=True)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+# 모든 모델의 베이스 클래스
+Base = declarative_base()
+```
+
+
+
 
 `src/schemas/access_token_schema.py`
 ```python
